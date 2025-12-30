@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversor DOCX para CSV/JSON/Vector</title>
+    <style>
+    /* RESET E LAYOUT GERAL */
+    html, body { height: 100%; overflow: hidden; margin: 0; padding: 0; }
+    body { font-family: "Segoe UI", Arial, sans-serif; background: #f0f2f5; color: #0f172a; }
+
+    .container { 
+        height: 100vh; 
+        display: flex; 
+        flex-direction: column; 
+        padding: 20px 30px; 
+        box-sizing: border-box; 
+        max-width: 100%; 
+    }
+
+    h2 { font-size: 1.5rem; font-weight: 600; margin: 0 0 20px 0; flex: 0 0 auto; }
+
+    .layout { 
+        display: grid; 
+        grid-template-columns: 450px 1fr; 
+        gap: 24px; 
+        flex: 1; 
+        min-height: 0; 
+        height: 100%;
+    }
+
+    .settings-panel { 
+        background: #ffffff; 
+        border-radius: 14px; 
+        box-shadow: 0 4px 15px rgba(15, 23, 42, 0.08); 
+        padding: 24px; 
+        display: flex; 
+        flex-direction: column; 
+        height: 100%; 
+        box-sizing: border-box; 
+        overflow-y: auto; 
+    }
+
+    .output-panel { 
+        background: #1e1e1e; 
+        border-radius: 14px; 
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2); 
+        padding: 0; 
+        display: flex; 
+        flex-direction: column; 
+        height: 100%; 
+        box-sizing: border-box; 
+        overflow: hidden;
+    }
+
+    .terminal-header {
+        background-color: #252526;
+        color: #cccccc;
+        padding: 10px 20px;
+        font-size: 12px;
+        font-weight: 600;
+        border-bottom: 1px solid #333;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    #terminal-body {
+        flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+        font-family: "Consolas", "Monaco", "Courier New", monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #d4d4d4;
+        white-space: pre-wrap; /* preserva quebras de linha e permite wraps naturais */
+        user-select: text;      /* garante seleção de texto apenas dentro do painel */
+    }
+
+    /* FORMULÁRIO E INPUTS */
+    .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+    label { font-weight: 600; font-size: 0.9rem; color: #374151; }
+    
+    select, input[type="file"] {
+        width: 100%;
+        padding: 10px;
+        border-radius: 6px;
+        border: 1px solid #d1d5db;
+        font-size: 14px;
+        background-color: #fff;
+    }
+
+    .file-drop-area {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        padding: 40px 20px;
+        border: 2px dashed #cbd5e1;
+        border-radius: 8px;
+        transition: 0.2s;
+        background-color: #f8fafc;
+        text-align: center;
+        box-sizing: border-box;
+    }
+    .file-drop-area:hover { border-color: #3b82f6; background-color: #eff6ff; }
+    .file-input { position: absolute; left: 0; top: 0; height: 100%; width: 100%; opacity: 0; cursor: pointer; }
+
+    .btn { border: none; border-radius: 6px; padding: 12px 20px; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; transition: 0.2s; margin-bottom: 10px; }
+    
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    
+    .btn-success { background: #16a34a; color: #fff; display: none; }
+    .btn-success:hover { background: #15803d; }
+
+    /* Botão JSON (Estilo VS Code - Amarelo/Dourado) */
+    .btn-json { 
+        background: #d97706; 
+        color: #fff; 
+        display: none; 
+    }
+    .btn-json:hover { background: #b45309; }
+
+    /* NOVO: Botão Vetorizar (Estilo AI/Roxo) */
+    .btn-vector { 
+        background: #7c3aed; /* Violeta */
+        color: #fff; 
+        display: none; 
+    }
+    .btn-vector:hover { background: #6d28d9; }
+
+    .btn:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
+
+    /* Botão ZIP (Laranja - Debug) */
+    .btn-zip { 
+        background: #f59e0b; /* Laranja forte */
+        color: #fff; 
+        display: none; /* Escondido até processar */
+        margin-top: 10px;
+    }
+    .btn-zip:hover { background: #ea580c; }
+
+    /* Botão Vetor JSON Debug (Rosa) */
+    .btn-vector-json { 
+        background: #475569; /* Pink 600 */
+        color: #fff; 
+        display: none; 
+    }
+    .btn-vector-json:hover { background: #be185d; }
+
+    /* Cor especial para o CSV */
+    .csv-text { color: #ce9178; } 
+    .placeholder-text { color: #6a9955; font-style: italic; }
+
+    </style>
+        
+</head>
+<body>
+
+<div class="container">
+    <h2>Conversor DOCX para CSV/JSON/Vector</h2>
+    
+    <div class="layout">
+        
+        <div class="panel settings-panel">
+
+            <form id="csvForm" style="flex: 1; display: flex; flex-direction: column;">
+                
+                <div class="field">
+                    <label>Selecione os arquivos (.docx)</label>
+                    <div class="file-drop-area">
+                        <span id="fileMsg" style="color:#64748b; font-size:0.9rem;">Clique ou solte arquivos aqui</span>
+                        <input type="file" class="file-input" id="docxFile" name="files" accept=".docx" multiple required>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="extractionMethod">Método de Extração</label>
+                    <select id="extractionMethod" name="extraction_method">
+                        <option value="padrao" selected>Padrão (Linear/Fragmentado)</option>
+                        <option value="alternativo">Alternativo (Por Parágrafo/Consolidado)</option>
+                        <option value="hierarquico">Hierárquico (Estruturado para JSON)</option>
+                        <option value="hierarquico_filtrado">Hierárquico Filtrado (Apenas Alterações)</option>
+                        <option value="hierarquico_comentarios">Hierárquico (Apenas Comentários)</option>
+                    </select>
+                    <small style="color:#64748b; margin-top:4px;">
+                        <strong>Padrão:</strong> Cada alteração gera uma linha <br>
+                        <strong>Alternativo:</strong> Por parágrafo - intervenções dentro da célula <br>
+                        <strong>Hierárquico:</strong> Ideal para JSON. Separa Parágrafo das Alterações <br>
+                        <strong>Filtrado:</strong> Igual Hierárquico, mas omite parágrafos sem alterações <br>
+                        <strong>Comentários:</strong> Igual Hierárquico, omite parágrafos sem comentários <br>
+                    </small>
+                </div>
+
+                <div style="margin-top: auto;">
+                    <button type="submit" class="btn btn-primary" id="processBtn" disabled>
+                        Executar Extração
+                    </button>
+                    
+                    <button type="button" class="btn btn-success" id="downloadBtn">
+                        📥 Baixar .CSV
+                    </button>
+
+                    <button type="button" class="btn btn-zip" id="downloadZipBtn">
+                        📦 Baixar .XML
+                    </button>
+
+                    <button type="button" class="btn btn-json" id="downloadJsonBtn">
+                        {...} Baixar .JSON
+                    </button>
+
+                    <button type="button" class="btn btn-vector" id="vectorizeBtn">
+                        ⚛️ Baixar .SQLITE (Vetoriza)
+                    </button>
+
+                    <!-- Botão de debug vetorial removido: apenas CSV/JSON/SQLite permanecem -->
+
+                </div>
+            </form>
+        </div>
+
+        <div class="panel output-panel">
+            <div class="terminal-header">
+                <span>TERMINAL DE SAÍDA</span>
+                <span id="status-indicator" style="color: #6a9955;">● Pronto</span>
+            </div>
+            <div id="terminal-body"><span class="placeholder-text">// Aguardando execução...</span></div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    const fileInput = document.getElementById('docxFile');
+    const fileMsg = document.getElementById('fileMsg');
+    const processBtn = document.getElementById('processBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const downloadJsonBtn = document.getElementById('downloadJsonBtn');
+    const vectorizeBtn = document.getElementById('vectorizeBtn'); // Novo
+    const terminal = document.getElementById('terminal-body');
+    const statusIndicator = document.getElementById('status-indicator');
+    const downloadZipBtn = document.getElementById('downloadZipBtn');
+    // Botão de debug vetorial removido
+    
+    let globalData = [];
+
+    // Função Genérica para CSV
+    function generateCSVContent(rows) {
+        if (!rows || rows.length === 0) return "";
+        const headers = Object.keys(rows[0]);
+        const csvRows = rows.map(row => {
+            return headers.map(fieldName => {
+                let val = row[fieldName] || "";
+                val = String(val).replace(/"/g, '""'); 
+                return `"${val}"`;
+            }).join(',');
+        });
+        return [headers.join(','), ...csvRows].join('\n');
+    }
+
+    // Função para JSON Hierárquico (Client Side)
+    function buildHierarchicalJSON(rows) {
+        const filesMap = {};
+        
+        rows.forEach(row => {
+            const fname = row.Nome_arquivo || "desconhecido.docx";
+            if (!filesMap[fname]) {
+                filesMap[fname] = {
+                    documento: {
+                        nome_arquivo: fname,
+                        data_processamento: new Date().toISOString().split('T')[0],
+                        paragrafos: []
+                    }
+                };
+            }
+            
+            const doc = filesMap[fname].documento;
+            let p = doc.paragrafos.find(p => p.index_p === row.Index_p);
+            
+            if (!p) {
+                p = {
+                    index_p: row.Index_p,
+                    tipo_secao: row.tipo_secao,
+                    texto_original: "",
+                    alteracoes: []
+                };
+                doc.paragrafos.push(p);
+            }
+
+            if (row.tipo === "Parágrafo") {
+                p.texto_original = row.texto;
+            } else {
+                p.alteracoes.push({
+                    tipo: row.tipo,
+                    texto: row.texto,
+                    posicao: row.posicao,
+                    comentario: row.comentario,
+                    autor: row.nome_usuario,
+                    data_hora: row.data_hora
+                });
+            }
+        });
+
+        const docs = Object.values(filesMap);
+        return docs.length === 1 ? docs[0] : docs;
+    }
+
+    // Listener de Arquivos
+    fileInput.addEventListener('change', function(e) {
+        const count = e.target.files.length;
+        if (count > 0) {
+            fileMsg.textContent = `${count} arquivo(s) selecionado(s)`;
+            fileMsg.style.color = '#0f172a';
+            fileMsg.style.fontWeight = '600';
+            processBtn.disabled = false;
+        } else {
+            fileMsg.textContent = 'Clique ou solte arquivos aqui';
+            processBtn.disabled = true;
+        }
+    });
+
+    // SUBMIT DO FORMULÁRIO (PREVIEW)
+    document.getElementById('csvForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        processBtn.disabled = true;
+        downloadBtn.style.display = 'none';
+        downloadJsonBtn.style.display = 'none';
+        vectorizeBtn.style.display = 'none'; // Esconde na nova submissão
+        
+        statusIndicator.textContent = "● Processando...";
+        statusIndicator.style.color = "#cca700";
+        terminal.innerHTML = '<span class="placeholder-text">// Processando arquivos... aguarde.</span>';
+
+        const formData = new FormData(this);
+
+        try {
+            const response = await fetch('/playground/processar_csv_preview', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) throw new Error("Erro na resposta do servidor.");
+            
+            const data = await response.json();
+            
+            if (data.erro) throw new Error(data.erro);
+            
+            globalData = data.rows || [];
+            
+            terminal.innerHTML = ''; 
+
+            if (globalData.length === 0) {
+                terminal.innerHTML = '<span class="placeholder-text" style="color:#f48771">// Nenhum dado encontrado nos arquivos.</span>';
+            } else {
+                const csvString = generateCSVContent(globalData);
+                const contentPre = document.createElement('pre');
+                contentPre.classList.add('csv-text');
+                contentPre.textContent = csvString; 
+                terminal.appendChild(contentPre);
+
+                downloadBtn.style.display = 'block';
+                downloadZipBtn.style.display = 'block';
+                 // Mostra botão ZIP 
+                downloadJsonBtn.style.display = 'block';
+                // Libera o botão de vetorizar se houver dados
+                vectorizeBtn.style.display = 'block';
+            }
+
+            statusIndicator.textContent = "● Concluído";
+            statusIndicator.style.color = "#4ec9b0";
+
+        } catch (err) {
+            terminal.innerHTML = `<span style="color:#f48771">Erro Fatal: ${err.message}</span>`;
+            statusIndicator.textContent = "● Erro";
+            statusIndicator.style.color = "#f48771";
+        } finally {
+            processBtn.disabled = false;
+        }
+    });
+
+    // DOWNLOAD CSV
+    downloadBtn.addEventListener('click', function() {
+        if (!globalData || globalData.length === 0) return;
+
+        const csvContent = generateCSVContent(globalData);
+        const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        
+        const method = document.getElementById('extractionMethod').value;
+        let suffix = '_detalhado';
+        if (method === 'alternativo') suffix = '_consolidado';
+        if (method === 'hierarquico') suffix = '_hierarquico';
+        
+        link.setAttribute('download', `relatorio_alteracoes${suffix}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+
+    // DOWNLOAD JSON (formato hierárquico compatível com ingest, sufixo _changes)
+    downloadJsonBtn.addEventListener('click', function() {
+        if (!globalData || globalData.length === 0) return;
+
+        // Força a transformação hierárquica, mesmo que o usuário tenha escolhido "Padrão" no menu.
+        // Garante que o JSON saia estruturado (árvore), compatível com o ingest.
+        const finalData = buildHierarchicalJSON(globalData);
+
+        // Gera o JSON legível (identado), como o arquivo *_changes do backend
+        const jsonContent = JSON.stringify(finalData, null, 2); 
+
+        const blob = new Blob([jsonContent], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        
+        // Define o nome do arquivo alinhado ao ingest
+        const method = document.getElementById('extractionMethod').value;
+        let suffix = '_hierarquico_changes'; 
+
+        link.setAttribute('download', `relatorio_alteracoes${suffix}.json`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+
+    // NOVO LISTENER: DOWNLOAD ZIP
+    downloadZipBtn.addEventListener('click', async function() {
+        if (fileInput.files.length === 0) {
+            alert("Selecione um arquivo .docx primeiro.");
+            return;
+        }
+
+        // Pega apenas o PRIMEIRO arquivo para converter (conforme solicitado)
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append("file", file);
+
+        // Feedback visual rápido
+        const originalText = downloadZipBtn.textContent;
+        downloadZipBtn.textContent = "⏳ Gerando ZIP...";
+        downloadZipBtn.disabled = true;
+
+        try {
+            const response = await fetch('/playground/baixar_docx_como_zip', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) throw new Error("Erro ao converter arquivo.");
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            
+            // Troca a extensão no nome do download
+            const namePart = file.name.split('.').slice(0, -1).join('.');
+            link.download = `${namePart}.zip`;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+        } catch (err) {
+            alert(`Erro: ${err.message}`);
+        } finally {
+            downloadZipBtn.textContent = originalText;
+            downloadZipBtn.disabled = false;
+        }
+    });
+
+    // NOVO: AÇÃO DE VETORIZAÇÃO E DOWNLOAD SQLITE3
+    vectorizeBtn.addEventListener('click', async function() {
+        // Usa os arquivos que estão no input atualmente
+        if (fileInput.files.length === 0) {
+            alert("Selecione arquivos primeiro.");
+            return;
+        }
+
+        // Feedback visual
+        vectorizeBtn.disabled = true;
+        vectorizeBtn.textContent = "⚛️ Vetorizando... (Aguarde)";
+        statusIndicator.textContent = "● Vetorizando (Azure OpenAI)...";
+        statusIndicator.style.color = "#7c3aed"; // Roxo
+        terminal.innerHTML += '\n<span style="color:#7c3aed">// Iniciando processo de vetorização (text-embedding-ada-002)...</span>';
+
+        // Monta form data novo com os arquivos
+        const formData = new FormData();
+        for (let i = 0; i < fileInput.files.length; i++) {
+            formData.append("files", fileInput.files[i]);
+        }
+        // Mapeia escolha do usuário para método de vetorização/RAG
+        // 1 (padrao) ou 2 (alternativo) => método 3 (hierarquico)
+        // 3, 4 ou 5 => usa exatamente o método selecionado
+        const methodSelected = document.getElementById('extractionMethod').value;
+        let methodForVector = methodSelected;
+        if (methodSelected === 'padrao' || methodSelected === 'alternativo') {
+            methodForVector = 'hierarquico';
+        }
+        formData.append("extraction_method", methodForVector);
+
+        try {
+            const response = await fetch('/playground/processar_vetorizar_json', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const errJson = await response.json();
+                throw new Error(errJson.erro || "Erro na vetorização");
+            }
+
+            // O retorno é um arquivo binário (blob)
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = "chroma.sqlite3"; // Nome fixo solicitado
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            terminal.innerHTML += '\n<span style="color:#4ec9b0">// Sucesso! Banco vetorial chroma.sqlite3 baixado.</span>';
+            statusIndicator.textContent = "● Vetorização Concluída";
+            statusIndicator.style.color = "#4ec9b0";
+
+        } catch (err) {
+            console.error(err);
+            terminal.innerHTML += `\n<span style="color:#f48771">Erro na Vetorização: ${err.message}</span>`;
+            statusIndicator.textContent = "● Erro Vetorização";
+            statusIndicator.style.color = "#f48771";
+        } finally {
+            vectorizeBtn.disabled = false;
+            vectorizeBtn.textContent = "⚛️ Baixar .SQLite3 (Vetoriza)";
+        }
+    });
+
+    // Listener de debug vetorial removido
+
+</script>
+
+</body>
+</html>

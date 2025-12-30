@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+pydantic-settings
+python-docx
+lxml
+langchain
+langchain-openai
+langchain-anthropic
+arq
+redis
+chromadb
+jinja2
+python-multipart

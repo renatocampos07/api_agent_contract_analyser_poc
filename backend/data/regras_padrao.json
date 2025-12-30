@@ -1,0 +1,5 @@
+[
+  {"id_regra":"R001","nome":" OBJETO/DESCRIÇÃO DOS SERVIÇOS                     (DESCRIÇÃO INCOERENTE OU IMPRECISA)","descricao_prompt":"Proposta com escopo claro e preciso. Reportar como categoria de probabilidade/impacto: Remota/Médio/NÃO ACEITÁVEL"},
+  {"id_regra":"R002","nome":"COMPROVAÇÃO DE PODERES","descricao_prompt":"Obter procuração ou contrato social Reportar como categoria de probabilidade/impacto: Remota/Baixo/ACEITO"},
+  {"id_regra":"R003","nome":"PREÇO/VALOR","descricao_prompt":"Deverá restar claro no contrato para seguir tabela de preço ou ordem de compra ou ferramenta on line de pedidos (EDI ou punchout) Reportar como categoria de probabilidade/impacto: Remota/Alto/NÃO ACEITÁVEL"}
+ ]

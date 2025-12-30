@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    image: sonepar-poc-backend:latest
+    container_name: sonepar_backend
+    restart: unless-stopped
+    volumes:
+      - ./backend:/app:cached
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  frontend:
+    image: node:18
+    container_name: sonepar_frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app:cached
+      # keep node_modules inside the container to avoid host OS/node conflicts
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      # Allow Vite to know where the API is (use service name 'backend' from compose)
+      VITE_API_URL: "http://backend:8000/api"
+      CHOKIDAR_USEPOLLING: "true"
+    command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - backend
+
+# Networks: default bridge network created by compose is fine for this setup

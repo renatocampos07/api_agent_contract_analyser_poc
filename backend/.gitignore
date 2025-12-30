@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.env
+data/uploads/
+data/processed/
+data/rag_db/
+data/rules/
+data/examples/deprecated/
+data/examples/vector_store/
+templates/deprecated/
+app/analysis/deprecated/

@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reverse Prompting - Refinamento Iterativo de Regras</title>
+    <style>
+    /* 1. ESTRUTURA GLOBAL (SEM SCROLL NA JANELA) */
+    html, body { 
+        height: 100%; 
+        margin: 0; 
+        padding: 0; 
+        overflow: hidden; /* Trava a rolagem da janela principal */
+        font-family: "Segoe UI", Arial, sans-serif; 
+        background: #f0f2f5; 
+        color: #0f172a; 
+    }
+
+    .container { 
+        height: 100vh; 
+        display: flex; 
+        flex-direction: column; 
+        padding: 20px 30px; 
+        box-sizing: border-box; 
+        max-width: 100%; 
+    }
+
+    h2 { font-size: 1.5rem; font-weight: 600; margin: 0 0 20px 0; flex: 0 0 auto; }
+
+    /* 2. LAYOUT DIVIDIDO (FLEXBOX ROBUSTO) */
+    .layout { 
+        display: flex; 
+        gap: 24px; 
+        flex: 1; /* Ocupa a altura restante */
+        min-height: 0; /* Crucial para o scroll interno funcionar no Firefox/Chrome */
+        overflow: hidden; 
+    }
+
+    /* 3. PAINEL ESQUERDO (CONFIGURAÇÕES - CLARO) */
+    .settings-panel { 
+        flex: 0 0 600px; /* Largura fixa */
+        max-width: 600px; 
+        background: #ffffff; 
+        border-radius: 14px; 
+        box-shadow: 0 4px 15px rgba(15, 23, 42, 0.08); 
+        padding: 24px; 
+        display: flex; 
+        flex-direction: column; 
+        height: 100%; 
+        box-sizing: border-box; 
+        overflow-y: auto; /* Scroll AQUI */
+    }
+
+    /* 4. PAINEL DIREITO (RESULTADOS - ESCURO/TERMINAL) */
+    .output-panel { 
+        flex: 1; /* Ocupa o resto da largura */
+        min-width: 400px;
+        background: #1e1e1e; /* Fundo Preto estilo VS Code */
+        color: #d4d4d4;      /* Texto claro */
+        border-radius: 14px; 
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2); 
+        padding: 0; /* Sem padding para o header colar nas bordas */
+        display: flex; 
+        flex-direction: column; 
+        height: 100%; 
+        box-sizing: border-box; 
+        overflow: hidden; 
+    }
+
+    /* HEADER DO PAINEL DIREITO */
+    .panel-header {
+        background: #252526;
+        padding: 15px 20px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        border-bottom: 1px solid #333;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex: 0 0 auto;
+    }
+
+    /* ÁREA DE SCROLL DA TABELA */
+    .output-scroll-area {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0;
+    }
+
+    /* ESTILOS DA TABELA DARK MODE */
+    table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 12px; }
+    
+    th { 
+        background: #2d2d2d; 
+        color: #cccccc; 
+        position: sticky; top: 0; z-index: 10; 
+        text-align: left; 
+        padding: 10px 15px; 
+        border-bottom: 1px solid #3e3e42;
+        font-weight: 600;
+    }
+    
+    td { 
+        border-bottom: 1px solid #333; 
+        padding: 12px 15px; 
+        vertical-align: top; 
+        word-wrap: break-word; 
+        color: #d4d4d4; 
+    }
+    
+    tr:hover { background-color: #2a2d2e; }
+
+    /* Estilo para separador de sessão */
+    .session-separator td {
+        background: #3f3f46;
+        color: #fff;
+        font-weight: bold;
+        text-align: center;
+        padding: 8px;
+        font-size: 11px;
+        letter-spacing: 1px;
+        border-top: 2px solid #52525b;
+    }
+
+    /* CAMPOS DO FORMULÁRIO */
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 15px; }
+    label { font-weight: 600; font-size: 0.85rem; color: #374151; margin-left: 2px; }
+    
+    .field input:not([type="checkbox"]), 
+    .field textarea { 
+        width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #d1d5db; 
+        font-size: 13px; font-family: inherit; box-sizing: border-box; 
+    }
+    .field textarea { resize: vertical; min-height: 60px; } 
+
+    /* CHECKBOX */
+    .checkbox-row {
+        display: flex; flex-direction: row; align-items: center; gap: 10px;
+        background: #f9fafb; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;
+        margin-bottom: 15px;
+    }
+    .checkbox-row input { width: auto !important; cursor: pointer; }
+    .checkbox-row label { margin: 0; cursor: pointer; font-weight: 500; font-size: 0.9rem; }
+
+    /* COLLAPSIBLE */
+    .collapsible-header { 
+        cursor: pointer; font-weight: 600; background: #f1f5f9; padding: 10px 12px; 
+        border-radius: 8px; color: #334155; display: flex; justify-content: space-between; align-items: center; 
+    }
+    .collapsible-header:hover { background: #e2e8f0; }
+
+    /* BOTÕES */
+    .btn-group { display: flex; gap: 10px; margin-top: 10px; padding-bottom: 10px; }
+    .btn { border: none; border-radius: 6px; padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .btn-success { background: #16a34a; color: #fff; }
+    .btn-secondary { background: #e5e7eb; color: #374151; }
+
+    /* MOBILE */
+    @media (max-width: 1100px) { 
+        html, body { overflow: auto; height: auto; } 
+        .container { height: auto; padding: 15px; }
+        .layout { flex-direction: column; height: auto; } 
+        .settings-panel { max-width: 100%; min-height: auto; }
+        .output-panel { min-height: 500px; }
+    }
+
+    /* NOVO: Estilo para Cabeçalhos Dinâmicos injetados no TBODY */
+    .dynamic-header th {
+        background: #2d2d2d; 
+        color: #cccccc; 
+        text-align: left; 
+        padding: 10px 15px; 
+        border-bottom: 1px solid #3e3e42;
+        font-weight: 600;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    /* Ajuste: Cor neutra e sem barra de rolagem */
+    .log-clean {
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 11px;
+        color: #d4d4d4; /* Cinza claro neutro (antes era azulado) */
+        white-space: pre-wrap;
+        padding: 15px;
+        background: transparent;
+        border-bottom: 1px dashed #404040;
+        /* Removido max-height e overflow para tirar a rolagem */
+    }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>Reverse Prompting - Refinamento Iterativo de Regras</h2>
+    
+    <div class="layout">
+        
+        <div class="settings-panel">
+            <form id="reverse-form">
+
+                <div class="field">
+                    <label for="rules-prompt">Regra (Draft ID + Título):</label>
+                    <textarea id="rules-prompt" name="rules_prompt" rows="5"></textarea>
+                </div>
+
+                <div class="field">
+                    <label for="clausula-teste">Cláusula (Teste):</label>
+                    <textarea id="clausula-teste" name="clausula_teste" rows="5"></textarea>
+                </div>
+
+                <div class="field">
+                    <label for="exemplos-csv">Exemplos & Correções (Ground Truth):</label>
+                    <textarea id="exemplos-csv" name="exemplos" rows="5"></textarea>
+                </div>
+
+
+                
+                <div class="field">
+                    <div class="collapsible-header" onclick="toggleCollapse('system-prompt-collapse')">
+                        <span>Auditor (System Prompt)</span> <span>▼</span>
+                    </div>
+                    <div id="system-prompt-collapse" class="collapsible-content" style="display:none; margin-top:5px;">
+                        <textarea id="system-prompt" name="system_prompt" rows="8">{{ system_intro_template }}</textarea>
+                    </div>
+                </div>
+                
+                <div class="field">
+                    <div class="collapsible-header" onclick="toggleCollapse('meta-prompt-collapse')">
+                        <span>Engenheiro (Meta Prompt)</span> <span>▼</span>
+                    </div>
+                    <div id="meta-prompt-collapse" class="collapsible-content" style="display:none; margin-top:5px;">
+                        <textarea id="meta-prompt" name="meta_prompt" rows="6">{{ meta_prompt_default }}</textarea>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="collapsible-header" onclick="toggleCollapse('red-team-collapse')">
+                        <span>Desafiante (Red Team Prompt)</span> <span>▼</span>
+                    </div>
+                    <div id="red-team-collapse" class="collapsible-content" style="display:none; margin-top:5px;">
+                        <textarea id="red-team-prompt" name="red_team_prompt" rows="12" placeholder="Prompt do Advogado do Diabo...">{{ red_team_prompt_default }}</textarea>
+                        <p style="font-size:11px; color:#666; margin-top:4px;">
+                            *Edite aqui a persona do atacante. Ative a execução no botão abaixo (Flag Vermelha).
+                        </p>
+                    </div>
+                </div>
+
+
+                <div class="field" style="margin-top:10px;">
+                    <div class="collapsible-header" onclick="toggleCollapse('rag-collapse')">
+                        <span>Buscar exemplos de contrato (RAG)</span> <span>▼</span>
+                    </div>
+                        <div id="rag-collapse" class="collapsible-content" style="display:none; margin-top:5px; padding:10px; border-radius:8px; border:1px dashed #cbd5f5; background:#f9fafb;">
+                            <div class="field" style="margin-bottom:10px;">
+                                <label for="rag-file" style="margin-bottom:4px; display:block;">Base de Contratos (.docx ou índice .sqlite3):</label>
+                                <input type="file" id="rag-file" accept=".docx,.sqlite3" multiple style="padding:6px; background:#fff;">
+                            </div>
+
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div style="display: flex; align-items: center; background:#fff; padding:2px 6px; border:1px solid #d1d5db; border-radius:6px;">
+                                    <label for="rag-top-k" style="margin:0; white-space: nowrap; font-size:12px; color:#555;">Top-K:</label>
+                                    <input type="number" id="rag-top-k" min="1" max="10" value="3" 
+                                           style="border:none; width:45px; text-align:center; outline:none; font-weight:bold; padding:0; height:24px; background:transparent;">
+                                </div>
+
+                                <button type="button" class="btn btn-secondary" id="btnRagBuscar" style="min-width:120px; padding: 6px 10px; font-size: 13px; white-space: nowrap;">
+                                    🔎 Buscar e Preencher
+                                </button>
+
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <input type="checkbox" id="rag-only-comments" style="cursor: pointer;">
+                                    <label for="rag-only-comments" style="margin:0; font-size:15px; white-space: nowrap; cursor: pointer;">
+                                        Só Cláusulas Comentadas
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div id="rag-status" style="margin-top:8px; font-size:11px; color:#6b7280; display:none; text-align: center;"></div>
+                        </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 15px;">
+                    <div style="display: flex; align-items: center; background:#fff; padding:2px 8px; border:1px solid #d1d5db; border-radius:6px;">
+                        <label for="max-attempts" style="margin:0; white-space: nowrap; font-size:13px; color:#555;">Máx. Tentativas:</label>
+                        <input type="number" id="max-attempts" name="max_attempts" min="1" value="5" style="border:none; width:45px; text-align:center; outline:none; font-weight:bold; padding:0; height:24px; background:transparent; margin-left:6px;">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <input type="checkbox" id="force_continue" name="force_continue" style="cursor: pointer;">
+                        <label for="force_continue" style="margin:0; font-size:14px; white-space: nowrap; cursor: pointer;">
+                            Continue até Máx.
+                        </label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <input type="checkbox" id="use_red_team" name="use_red_team" style="cursor: pointer;">
+                        <label for="use_red_team" style="margin:0; font-size:14px; white-space: nowrap; cursor: pointer;">
+                            Ativar Red Team
+                        </label>
+                    </div>
+                </div>
+
+                <input type="hidden" name="llm_deployment" value="">
+                <input type="hidden" name="llm_temperature" value="">
+
+                <div class="btn-group">
+                    <button class="btn btn-success" type="submit">Execute</button>
+                    <button class="btn btn-secondary" type="button" id="btnGeraExemplos">Preenche Exemplos</button>
+                </div>
+
+            </form>
+        </div>
+
+        <div class="output-panel">
+            <div class="panel-header">
+                TERMINAL DE SAÍDA
+                <span id="status-tag" style="font-size:11px; background:#333; padding:2px 8px; border-radius:4px; display:none;">Processando...</span>
+            </div>
+            
+            <div class="output-scroll-area">
+                <table id="csv-output">
+                    <thead></thead> 
+                    <tbody>
+                        </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    function toggleCollapse(id) {
+        var el = document.getElementById(id);
+        el.style.display = (el.style.display === "none" || el.style.display === "") ? "block" : "none";
+    }
+
+    const reverseForm = document.getElementById('reverse-form');
+    const exemplosCsvEl = document.getElementById('exemplos-csv');
+    const clausulaTesteEl = document.getElementById('clausula-teste');
+
+    const ragFileInput = document.getElementById('rag-file');
+    const ragTopKInput = document.getElementById('rag-top-k');
+    const ragExtractionMethodSelect = document.getElementById('rag-extraction-method');
+    const btnRagBuscar = document.getElementById('btnRagBuscar');
+    const ragStatus = document.getElementById('rag-status');
+
+    const colHeader1 = document.getElementById('col-header-1');
+    const colHeader2 = document.getElementById('col-header-2');
+    const colHeader3 = document.getElementById('col-header-3');
+
+    if (btnRagBuscar) {
+        btnRagBuscar.addEventListener('click', async () => {
+            ragStatus.style.display = 'block';
+            ragStatus.style.color = '#9ca3af'; // Cor neutra de loading
+            ragStatus.textContent = '🔎 Buscando exemplos...';
+
+            const files = ragFileInput?.files;
+            if (!files || files.length === 0) {
+                ragStatus.style.color = '#ef4444';
+                ragStatus.textContent = 'Selecione ao menos um arquivo.';
+                return;
+            }
+
+            // Validações de arquivo (Mantendo sua lógica original simplificada aqui para brevidade)
+            // ... (assumindo que a validação de docx/sqlite está ok no seu código) ...
+
+            let topK = parseInt(ragTopKInput?.value || '3', 10);
+            const formDataRag = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                formDataRag.append('files', files[i]);
+            }
+            formDataRag.append('top_k', String(topK));
+
+            const ragOnlyCommentsCheckbox = document.getElementById('rag-only-comments');
+            const extractionMethod = (ragOnlyCommentsCheckbox && ragOnlyCommentsCheckbox.checked)
+                ? 'hierarquico_comentarios'
+                : 'hierarquico_filtrado';
+            formDataRag.append('extraction_method', extractionMethod);
+
+            if (clausulaTesteEl && clausulaTesteEl.value.trim()) {
+                formDataRag.append('clausula_teste', clausulaTesteEl.value.trim());
+            }
+
+            try {
+                const resp = await fetch('/playground/rag-context', {
+                    method: 'POST',
+                    body: formDataRag
+                });
+
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+                const data = await resp.json();
+                
+                // CORREÇÃO 1: Definindo contextoLista no escopo correto
+                const contextoLista = Array.isArray(data.contexto_rag) ? data.contexto_rag : [];
+
+                if (!contextoLista.length) {
+                    ragStatus.style.color = '#f59e0b';
+                    ragStatus.textContent = 'Nenhum exemplo encontrado.';
+                    return;
+                }
+
+                // ATUALIZA A TABELA (COM CABEÇALHOS DINÂMICOS NO TOPO)
+                const tbody = document.querySelector('#csv-output tbody');
+                if (tbody && Array.isArray(data.logs)) {
+                    
+                    const fragment = document.createDocumentFragment();
+
+                    // 1. Cabeçalho Dinâmico (RAG)
+                    const trHead = document.createElement('tr');
+                    trHead.className = 'dynamic-header';
+                    trHead.innerHTML = `
+                        <th style="width:50px; text-align:center;">#</th>
+                        <th style="width:40%;">Cláusula (Contexto)</th>
+                        <th style="width:40%;">Comentários Originais</th>
+                        <th style="width:100px; text-align:center;">Similaridade</th>
+                        <th></th>
+                    `;
+                    fragment.appendChild(trHead);
+
+                    // 2. Linhas de Dados
+                    data.logs.forEach((item, idx) => {
+                        const tr = document.createElement('tr');
+                        const jsonObj = item.json || {};
+                        const nomeArquivo = jsonObj.nome_arquivo || '';
+                        const indexP = jsonObj.index_p ?? '';
+                        const tipoSecao = jsonObj.tipo_secao || '';
+                        const texto = jsonObj.texto || '';
+                        
+                        const alteracoes = Array.isArray(jsonObj.alteracoes) ? jsonObj.alteracoes : [];
+                        const alteracoesStr = alteracoes.length ? JSON.stringify(alteracoes, null, 2) : '';
+
+                        let simVal = jsonObj.similaridade_percentual;
+                        let simColor = '#9ca3af';
+                        let simText = '';
+                        if (typeof simVal === 'number') {
+                            simText = simVal.toFixed(1) + '%';
+                            if (simVal >= 90) simColor = '#4ade80';
+                            else if (simVal >= 80) simColor = '#facc15';
+                            else simColor = '#ef4444';
+                        }
+
+                        const colunaRegra = `${nomeArquivo} | p=${indexP}\n${texto}`;
+
+                        tr.innerHTML = `
+                            <td style="text-align:center; color:#64748b; font-weight:bold;">${item.numero || idx + 1}</td>
+                            <td><pre style="white-space:pre-wrap; font-size:11px; margin:0; color:#d4d4d4;">${colunaRegra}</pre></td>
+                            <td><pre style="white-space:pre-wrap; font-size:11px; margin:0; color:#93c5fd;">${alteracoesStr}</pre></td>
+                            <td style="text-align:center; vertical-align:top;">
+                                <span style="font-weight:bold; color:${simColor}; border:1px solid ${simColor}; padding:2px 6px; border-radius:4px; font-size:10px;">
+                                    ${simText}
+                                </span>
+                            </td>
+                            <td></td>
+                        `;
+                        fragment.appendChild(tr);
+                    });
+
+                    // Insere no topo
+                    tbody.prepend(fragment);
+                }
+
+                // CORREÇÃO 2: Atualizando o textarea com a variável correta
+                if (exemplosCsvEl) {
+                    const atual = exemplosCsvEl.value.trim();
+                    const jsonStrings = contextoLista.map(obj => JSON.stringify(obj, null, 2));
+                    const blocoNovo = jsonStrings.join('\n\n');
+                    
+                    // Adiciona quebra se já tiver texto
+                    exemplosCsvEl.value = atual ? (atual + '\n\n' + blocoNovo) : blocoNovo;
+                }
+
+                ragStatus.style.color = '#10b981';
+                ragStatus.textContent = `✅ ${contextoLista.length} exemplos adicionados.`;
+
+            } catch (err) {
+                console.error(err);
+                ragStatus.style.color = '#ef4444';
+                ragStatus.textContent = 'Erro: ' + err.message;
+            }
+        });
+    }
+
+    reverseForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const ruleVal = document.getElementById('rules-prompt').value.trim();
+        const clauseVal = document.getElementById('clausula-teste').value.trim();
+        if (!ruleVal || !clauseVal) {
+            alert("Por favor, preencha a 'Regra Inicial' e a 'Cláusula Alvo' antes de executar.");
+            return;
+        }
+
+        const tbody = document.querySelector('#csv-output tbody');
+        const statusTag = document.getElementById('status-tag');
+
+        if (colHeader1) colHeader1.textContent = 'Regra Gerada/Usada';
+        if (colHeader2) colHeader2.textContent = 'Resposta da IA';
+        if (colHeader3) colHeader3.textContent = 'Status';
+        
+        // NÃO LIMPA MAIS O TBODY!
+        // tbody.innerHTML = ''; 
+        
+        statusTag.style.display = 'inline-block';
+        statusTag.textContent = "⏳ Processando...";
+        statusTag.style.color = "#fbbf24"; 
+
+        // Cria linha de loading temporária no TOPO
+        const loadingRow = document.createElement('tr');
+        loadingRow.id = 'loading-row-temp';
+        loadingRow.innerHTML = `<td colspan="5" style="text-align:center; padding:30px; color:#94a3b8;">
+            <div style="margin-bottom:5px;">⏳ Executando nova rodada...</div>
+            <div style="font-size:10px; opacity:0.7;">Isso pode levar alguns minutos.</div>
+        </td>`;
+        tbody.prepend(loadingRow);
+
+        const forceContinue = document.getElementById('force_continue').checked;
+        const useRedTeam = document.getElementById('use_red_team')?.checked;
+        const redTeamPrompt = document.getElementById('red-team-prompt')?.value;
+        const formData = new FormData(this);
+        formData.set('force_continue', forceContinue);
+        formData.set('use_red_team', useRedTeam);
+        formData.set('red_team_prompt', redTeamPrompt);
+
+        try {
+            const response = await fetch('/playground/reverse-prompting/process', {
+                method: 'POST',
+                body: formData
+            });
+            
+            let data;
+            try { data = await response.json(); } 
+            catch (err) { throw new Error("Erro de comunicação com o servidor."); }
+
+            // Remove loading
+            const tempLoad = document.getElementById('loading-row-temp');
+            if(tempLoad) tempLoad.remove();
+
+            if (data.tentativas && data.tentativas.length > 0) {
+                statusTag.textContent = "✅ Concluído";
+                statusTag.style.color = "#4ade80"; 
+
+                // Cria um fragmento para a nova sessão
+                const fragment = document.createDocumentFragment();
+
+                // 1. CABEÇALHO DINÂMICO (EXECUÇÃO) - No topo do bloco
+                const trHead = document.createElement('tr');
+                trHead.className = 'dynamic-header';
+                trHead.innerHTML = `
+                    <th style="width:50px; text-align:center;">#</th>
+                    <th style="width:30%;">Regra Gerada/Usada</th>
+                    <th style="width:30%;">Resposta da IA</th>
+                    <th style="width:80px; text-align:center;">Status</th>
+                    <th style="width:30%; text-align:center">Red Team</th>
+                `;
+                fragment.appendChild(trHead);
+
+                // 2. LINHAS DE DADOS (TENTATIVAS)
+                data.tentativas.forEach(t => {
+                    const tr = document.createElement('tr');
+                    
+                    // ... (Lógica de visualização existente mantida 100%) ...
+                    let ruleDisplay = t.regras_aplicadas_texto || "";
+                    if(ruleDisplay.length > 20000) ruleDisplay = ruleDisplay.substring(0, 20000) + "...";
+
+                    let statusBg, statusText, statusLabel;
+                    if (t.status === '✅ Detectou' || t.status === 'matching') {
+                        statusBg = '#064e3b'; statusText = '#6ee7b7'; statusLabel = '✅ Detectou';
+                    } else {
+                        statusBg = '#7f1d1d'; statusText = '#fca5a5'; statusLabel = '❌ Falhou';
+                    }
+
+                    let redTeamHtml = '<div style="text-align:center; color:#475569;">-</div>';
+                    if (t.red_team_data) {
+                        const jsonRaw = JSON.stringify(t.red_team_data, null, 2);
+                        redTeamHtml = `<pre style="font-family: Consolas, monospace; font-size: 11px; color: #d4d4d4; white-space: pre-wrap; margin: 0; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid #334155;">${jsonRaw}</pre>`;
+                    }
+                    
+                    tr.innerHTML = `
+                        <td style="text-align:center; font-weight:bold; color:#a3a3a3;">${t.tentativa}</td>
+                        <td><pre style="white-space:pre-wrap; font-family:Consolas, monospace; font-size:11px; margin:0; color:#ce9178;">${ruleDisplay}</pre></td>
+                        <td><pre style="white-space:pre-wrap; font-family:Consolas, monospace; font-size:11px; margin:0; color:#9cdcfe;">${t.resposta_ia}</pre></td>
+                        <td style="text-align:center;">
+                            <span style="padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; background:${statusBg}; color:${statusText}; min-width:80px; display:inline-block;">${statusLabel}</span>
+                        </td>
+                        <td style="vertical-align:top;">${redTeamHtml}</td>
+                    `;
+                    fragment.appendChild(tr);
+                });
+
+                // 3. LINHA DE LOGS (Agora vem ABAIXO das tentativas)
+                if (data.logs) {
+                    const trLog = document.createElement('tr');
+                    trLog.innerHTML = `
+                        <td colspan="5" style="padding:0;">
+                            <div class="log-clean"><strong>📡 LOG DE EXECUÇÃO:</strong><br>${data.logs}</div>
+                        </td>
+                    `;
+                    fragment.appendChild(trLog);
+                }
+
+                // Insere o bloco completo (Header -> Tentativas -> Log) no TOPO da tabela
+                tbody.prepend(fragment);
+
+            } else {
+                statusTag.textContent = "⚠️ Vazio";
+                // Mostra erro no topo
+                const trErr = document.createElement('tr');
+                trErr.innerHTML = `<td colspan="5" style="color:#f87171; padding:20px; text-align:center;">${data.erro || "Nenhuma tentativa retornada."}</td>`;
+                tbody.prepend(trErr);
+            }
+        } catch (err) {
+            // Remove loading se der erro
+            const tempLoad = document.getElementById('loading-row-temp');
+            if(tempLoad) tempLoad.remove();
+
+            statusTag.textContent = "❌ Erro";
+            statusTag.style.color = "#f87171";
+            const trFatal = document.createElement('tr');
+            trFatal.innerHTML = `<td colspan='5' style='color:#f87171; padding:20px; text-align:center;'>Erro fatal: ${err.message}</td>`;
+            tbody.prepend(trFatal);
+        }
+    });
+
+    // ... (Código do btnGeraExemplos mantido igual) ...
+    document.getElementById('btnGeraExemplos').onclick = function() {
+        {% raw %}
+        const sysEl = document.getElementById('system-prompt');
+        if (!sysEl.value.trim()) {
+            sysEl.value = `[PROMPT]
+
+PERSONA:
+Você é um Agente Especialista em Compliance Jurídico e Redação Contratual (Contract Redlining).
+Sua arquitetura mental combina o rigor das Políticas Sonepar (Nortel, Dimensional, Eletronor - Lei Sapin II).
+
+Sua função é:
+1. **Auditor (Array \`comments\`):** Identificar infrações às regras de negócio.
+
+CONTEXTO DE PROCESSAMENTO:
+O sistema de backend lerá sua resposta. Falhas de formatação JSON quebram o sistema.
+1. Você deve identificar **TODAS** as ocorrências de uma infração.
+2. Não pare na primeira infração encontrada. Varra o texto até o final para cada regra e variação.
+
+OBJETIVO FINAL:
+Ler o contrato, aplicar a Base de Regras e gerar um JSON onde cada apontamento de risco (\`comments\`).
+
+==================================================
+ESTRUTURA DO JSON (SAÍDA OBRIGATÓRIA)
+==================================================
+A resposta deve ser EXATAMENTE este objeto JSON.
+IMPORTANTE: Não use blocos de código markdown (json). Apenas o texto cru do JSON.
+IMPORTANTE: Strings longas no JSON devem usar \n para quebra de linha, nunca quebras reais.
+
+{
+output: "String única contendo o RELATÓRIO HUMANIZADO formatado com caracteres de quebra de linha (\\n). Deve resumir o status de cada regra de Compliance apenas.",
+comments: [
+{
+search: "String EXATA e CURTA encontrada no texto original (âncora visual)",
+comment: "String contendo: [ID ÚNICO] | [REGRA XX] - Descrição + Ação Corretiva",
+author: "Agent AI",
+op_id: "ID único (ex: R01-01, R01-02, R28-01...)"
+}
+],
+changes: [
+]
+}
+
+==================================================
+DIRETRIZES DE PREENCHIMENTO E LÓGICA
+==================================================
+
+### 1. Separação de Funções (CRÍTICO)
+* **Array \`comments\` (Compliance):** Use EXCLUSIVAMENTE para apontar violações das REGRAS 001 a 028 listadas abaixo (riscos jurídicos, cláusulas ausentes, multas abusivas).
+
+### 2. Lógica de Multiplicidade (Compliance)
+Muitas regras possuem variações (Lógica A, Lógica B) e podem ocorrer múltiplas vezes no texto.
+* **Regra:** Para cada regra da base (e suas sub-lógicas), escaneie o documento inteiro independentemente.
+* **Ação:** Se a regra for violada N vezes (somando todas as variações), gere N objetos no array 'comments' e mencione as N ocorrências no campo 'output'.
+
+### 2.1. Lógica CRÍTICA da Multiplicidade (REGRA 028)
+**Para a REGRA 028 (Campos em Branco) e SOMENTE para ela, a identificação de cada um dos 'Padrões de Busca (Visual)' deve ser tratada como um evento de infração **INDIVIDUAL e DISCRETO**, mesmo que múltiplos padrões apareçam na mesma linha ou trecho. A cada '...' ou '___' ou '[ ]' detectado, um novo objeto (e um novo \`op_id\` sequencial) deve ser criado no array \`comments\`. **NUNCA CONSOLIDE** ocorrências da Regra 028.**
+
+### 3. Campo 'output' (Relatório Consolidado)
+Gere um relatório legível dentro de uma única string JSON. Use \`\n\` para formatar.
+Foque apenas nas Regras de Compliance. Não liste correções gramaticais aqui.
+Para cada regra da base, siga este template visual:
+---
+**REGRA [NÚMERO]:** [Descrição da Regra]
+* **OCORRÊNCIA:** [Sequencia: 001, 002...]
+* **Gatilho Identificado:** [Sim/Não/Não Aplicável]
+* **Cláusula(s):** [Citar trecho ou "N/A"]
+* **Status:** [CONFORME / NÃO CONFORME / NÃO APLICÁVEL]
+* **Comentário/Ação:** [Copiar a 'Ação Corretiva' exata se NÃO CONFORME]
+---
+
+### 4. Campo 'comments'
+Gere um item neste array para cada regra de Compliance com status **NÃO CONFORME**.
+* **Formato do texto 'comment':** "[op_id do comentário] | [REGRA NÚMERO]:** [Descrição da Regra]\n\n**Comentário/Ação:** [Copiar a 'Ação Corretiva' da regra]"
+* **op_id:** Use um formato lógico: \`R[NumRegra]-[Sequencial]\`. Ex: \`R28-01\`.
+
+### 5. Segurança do JSON (Escaping)
+* Se o texto original contiver aspas duplas (\`"\`), você deve escapá-las (\`\"\`) dentro das strings do JSON.
+* Nunca insira quebras de linha reais dentro dos valores das chaves json. Use sempre \`\n\`.
+
+### REGRAS CRÍTICAS DO CAMPO 'SEARCH' (Risco de Falha no Backend)
+O sistema usa busca exata (indexOf). Siga estritamente:
+1. **PROIBIDO:** Quebras de linha (\n), Tabs (\t), caracteres de tabela (|, +, --), bullets (*, -).
+2. **PROIBIDO:** Frases longas que cruzam linhas no PDF visual.
+3. **ESTRATÉGIA:** Se o erro estiver em tabela, lista ou texto quebrado, **busque o Título da Cláusula** ou uma **expressão curta e única** (máx 6 palavras) próxima ao erro.
+4. **EXATIDÃO:** Copie o texto exato do input, respeitando maiúsculas/minúsculas e pontuação.
+
+### INSTRUÇÕES FINAIS (CRÍTICO):
+Ao receber o contrato:
+1. Leia o contrato completo antes de iniciar a análise
+2. Aplique cada regra sequencialmente (001 a 028)
+3. Para cada regra, varra o documento inteiro
+4. Para regras com múltiplas lógicas (A, B, C, D), processe cada uma independentemente
+5. Gere o JSON seguindo rigorosamente a estrutura especificada
+
+==================================================
+[INÍCIO DO CONTRATO]
+==================================================
+{{{ $tools.document_text_extract_tool.result }}}
+==================================================
+[FIM DO CONTRATO]
+==================================================
+`;
+        }
+        {% endraw %}
+
+        const rulesEl = document.getElementById('rules-prompt');
+        if (!rulesEl.value.trim()) {
+            rulesEl.value = `**R045 [Condição de Pagamento]**\nAviso prévio não superior a 30 dias de forma imotivada. Exceto para locações em que recomendamos que o prazo seja de no mínimo 180 dias para realocação da operação Reportar como categoria de probabilidade/impacto: Remota/Médio/NÃO ACEITÁVEL  deverá a área requisitante solucionar, e para os contratos de locação deverá a gerência logística validar (Novos CDS e unidades com estoque com Gerência de facilities)`;
+        }
+
+        const clausulaEl = document.getElementById('clausula-teste');
+        if (!clausulaEl.value.trim()) {
+            clausulaEl.value = `As Partes concordam que o presente Contrato poderá ser rescindido por iniciativa da CONTRATANTE, sem qualquer ônus, mediante notificação escrita com 30 (trinta) dias de antecedência.`;
+        }
+
+        const exemplosEl = document.getElementById('exemplos-csv');
+        if (!exemplosEl.value.trim()) {
+            exemplosEl.value = `EXEMPLO 1: "Pagamento em 30 dias." -> CORREÇÃO: Erro. Mínimo 60 dias.\nEXEMPLO 2: "Pagamento à vista." -> CORREÇÃO: Erro. Fluxo exige 60 dias.\nEXEMPLO 3: "Pagamento em 60 dias." -> CORREÇÃO: Aprovado.`;
+        }
+
+        {% raw %}
+        const metaEl = document.getElementById('meta-prompt');
+        if (!metaEl.value.trim()) {
+            metaEl.value = `################################################################################
+### META PROMPT – RegraBuilder-AI
+################################################################################
+
+Você é o **RegraBuilder-AI**, um engenheiro especialista em criar e aperfeiçoar regras contratuais iterativamente.
+Seu objetivo é produzir uma nova versão da regra fornecida, ajustando-a conforme a fase evolutiva da tentativa atual ({{tentativa_atual}} de {{max_tentativas}}).
+
+A regra pode ser nova ou uma versão anterior.
+Você deve sempre buscar o ponto ótimo entre:
+- Risco de falso negativo (muito genérica)
+- Risco de falso positivo (muito específica)
+- Custo de tokens
+- Estabilidade semântica
+
+================================================================================
+### 1. COMPORTAMENTO EVOLUTIVO POR TENTATIVA
+================================================================================
+
+──────────────────────────────────────────────────────────────────────────────
+🔹 **Tentativas Iniciais** (1 → ~30% do total)
+──────────────────────────────────────────────────────────────────────────────
+Estilo: **CONCEITUAL, CURTO, GENÉRICO**
+Objetivo: Radar aberto para capturar o conceito do erro.
+
+• Texto mínimo e abstrato.
+• **Preserve números-chave (Golden Values)** se essenciais (ex: "60 dias"), mas ignore variações linguísticas.
+• Sem listas de exemplos literais.
+• Estrutura simples (Lógica única ou A/B).
+
+──────────────────────────────────────────────────────────────────────────────
+🔹 **Tentativas Intermediárias** (~30% → ~70%)
+──────────────────────────────────────────────────────────────────────────────
+Estilo: **EQUILIBRADO (HÍBRIDO)**
+Objetivo: O ponto ótimo de produção.
+
+• Adicione sinônimos comuns e gatilhos semânticos.
+• Diferencie papéis claramente (Contratante vs Contratada).
+• Usa princípios recorrentes encontrados nos exemplos humanos (Ground Truth).
+• Sem copiar trechos literais de nenhuma cláusula.
+
+──────────────────────────────────────────────────────────────────────────────
+🔹 **Tentativas Finais** (~70% → 100%)
+──────────────────────────────────────────────────────────────────────────────
+Estilo: **LITERAL, DETALHADO, OVERFITTING**
+Objetivo: Força bruta para eliminar o erro.
+
+• Lista ampla de padrões de busca.
+• Pode trazer frases literais ("SE contiver exatamente...") observadas nos Ground Truths.
+• Use blocos C e D para isolar esses casos literais.
+• Maior risco de falso positivo é aceitável.
+
+================================================================================
+### 2. COMO UTILIZAR OS DADOS
+================================================================================
+
+Você receberá os dados brutos no final deste prompt. Use-os assim:
+
+1.  **Histórico ({{tabela_historico}}):** Se houver falsos negativos, aumente a precisão. Se houver falsos positivos, reduza a literalidade.
+2.  **Ground Truth ({{exemplo_comentario}}):**
+    * Identifique padrões recorrentes (ex: "prazo curto", "falta de aviso").
+    * Traduza esses padrões para Lógicas de Erro.
+    * **Atenção:** Nas tentativas finais, use termos literais (ex: “5 dias”) encontrados aqui.
+3.  **Cláusula Teste ({{exemplo_texto_original}}):** Use apenas para simular mentalmente se a regra funcionaria. Não copie o texto dela.
+
+🚫 TRAVA DE SEGURANÇA DE TÓPICO: Você está ESTRITAMENTE PROIBIDO de alterar o tema central da regra. Se a regra é sobre "Prazo de Pagamento", você NÃO PODE transformá-la em uma regra sobre "Retenção", "Juros" ou "Multa". Mantenha o foco obsessivo na Cláusula Alvo ({{exemplo_texto_original}}). Se a cláusula fala de "dias", sua regra TEM QUE falar de "dias". Não invente critérios que não existem no texto alvo.
+
+================================================================================
+### 3. FORMATO OBRIGATÓRIO DA REGRA NA SAÍDA
+================================================================================
+
+Sua única saída deve ser a NOVA regra, construída dinamicamente neste formato Markdown plano.
+**Regra de Ouro:** Gere APENAS os blocos necessários. Se um bloco (B, C ou D) não for necessário, **NÃO O ESCREVA**. Não use "Não aplicável".
+
+### REGRA [ID] – [Título da Regra]
+
+* **Padrões de Busca:** (Termos chave que evoluem de genéricos para literais conforme a fase.)
+
+* **Lógica de Erro (A - [Defina o Contexto Principal]):**
+    (Descreva a condição SE... ENTÃO... para o cenário principal.)
+    * **Ação Corretiva (A):** (A instrução clara que deve aparecer no relatório.)
+
+* **Lógica de Erro (B - [Defina o Contexto Secundário]):**
+    (INSIRA ESTE BLOCO APENAS SE HOUVER DIFERENÇA REAL DE PAPEL OU CENÁRIO)
+    * **Ação Corretiva (B):** (...)
+
+* **Lógica de Erro (C - [Defina o Contexto]):**
+    (INSIRA ESTE BLOCO APENAS SE HOUVER UMA SUB-REGRA COMPLEXA)
+    * **Ação Corretiva (C):** (...)
+
+* **Lógica de Erro (D - Casos Literais):**
+    (INSIRA ESTE BLOCO APENAS NA FASE FINAL PARA CAPTURAR FRASES EXATAS)
+    * **Ação Corretiva (D):** (...)
+
+* **Instrução de Multiplicidade:** Avalie as Lógicas presentes separadamente em todo o texto. Gere UM item no array \`comments\` para CADA ocorrência de CADA variação encontrada.
+
+================================================================================
+### 4. DADOS BRUTOS (CONTEXTO)
+================================================================================
+
+### Regra Atual (Draft):
+{{json_rule}}
+
+### Histórico de Tentativas:
+{{tabela_historico}}
+
+### Cláusula Alvo (Teste):
+{{exemplo_texto_original}}
+
+### Ground Truth (Exemplos Reais):
+{{exemplo_comentario}}
+
+################################################################################
+### SUA SAÍDA: GERAR APENAS A NOVA VERSÃO DA REGRA NO FORMATO OBRIGATÓRIO
+################################################################################
+`;
+        }
+        {% endraw %}
+
+        // --- BLOCO NOVO: Preencher Red Team Prompt se vazio ---
+        {% raw %}
+        const redTeamEl = document.getElementById('red-team-prompt');
+        if (redTeamEl && !redTeamEl.value.trim()) {
+            redTeamEl.value = `Você é o **Advogado do Diabo**, especialista em "Red Teaming" de contratos corporativos.
+    Sua função é testar a robustez da Regra de Compliance, MAS mantendo os pés no chão da realidade jurídica.
+
+    ENTRADAS:
+    1. REGRA ATUAL: A lógica que está sendo testada.
+    2. CLÁUSULA ALVO (USUÁRIO): O texto original.
+    3. STATUS DA DETECÇÃO: Se a regra pegou ou não o erro.
+    4. GROUND TRUTH: A política real da empresa.
+
+    ---
+    ### SUA MISSÃO
+    Tente encontrar uma brecha na Regra Atual criando uma **Cláusula Armadilha**.
+
+    **CENÁRIO A (Ataque de Evasão):** Se a regra já detectou o erro do usuário, tente criar uma variação do texto que mantenha o risco jurídico mas **escape** da lógica da regra (ex: usando sinônimos complexos, mudando a estrutura frasal, escrevendo números por extenso).
+    **CENÁRIO B (Ataque de Óbvio):** Se a regra NÃO detectou, crie um caso ainda mais gritante para provar a falha.
+    **CENÁRIO C (RENDIÇÃO/APROVAÇÃO):**
+        Se você analisar a regra e concluir que ela é **ROBUSTA**, cobrindo bem os sinônimos e variações lógicas sem ser rígida demais, **NÃO INVENTE UM ATAQUE FORÇADO**.
+    Admitir que o Engenheiro fez um bom trabalho é parte da sua função.
+
+    ---
+    ### 🚫 RESTRIÇÕES DE REALISMO (Anti-Alucinação)
+    1. **Plausibilidade:** A cláusula armadilha deve parecer escrita por um advogado real ou um fornecedor tentando levar vantagem. Não crie textos poéticos ou informais.
+    2. **Contexto Jurídico:** Não invente Leis, Artigos ou Decretos que não existem. Use referências genéricas ("legislação aplicável", "Código Civil") se necessário.
+    3. **Foco no Risco:** Ataque a lógica do risco (prazos, valores, responsabilidades).
+    4. **Evite "Edge Cases" Matemáticos:** Não use números absurdos apenas para testar o limite da regra (ex: se o mínimo é 30 dias, **NÃO** use "29 dias"). Use prazos ruins comuns de mercado (ex: "5 dias", "imediato", "15 dias", "48 horas").
+    ---
+    ### SAÍDA OBRIGATÓRIA (JSON PURO)
+    {
+      "raciocinio": "Explicação técnica da brecha encontrada (ou um elogio breve se a regra for aprovada).",
+      "clausula_armadilha": "O texto da armadilha (ou escreva 'NENHUMA' se a regra for robusta)."
+    }`;
+        }
+        {% endraw %}
+    };
+</script>
+</body>
+</html>
